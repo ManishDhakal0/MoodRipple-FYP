@@ -1,0 +1,294 @@
+<div class="dash-grid">
+
+  <!-- ═══════════ LEFT COL ═══════════ -->
+  <div class="dash-left">
+
+    <!-- Camera card -->
+    <div class="card" style="flex:1;min-height:200px;max-height:320px;position:relative;overflow:hidden;border-radius:16px;background:#0e0e1a;">
+      <!-- Label -->
+      <div style="position:absolute;top:14px;left:16px;z-index:2;display:flex;align-items:center;gap:7px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(190,192,235,0.45)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+        </svg>
+        <span style="font-size:9px;font-weight:700;letter-spacing:2.4px;text-transform:uppercase;color:rgba(190,192,235,0.45)">Live Feed</span>
+        <div id="liveIndicator" style="width:6px;height:6px;border-radius:50%;background:#ef4444;display:none;box-shadow:0 0 7px rgba(239,68,68,0.70)"></div>
+      </div>
+      <!-- Glow orb -->
+      <div style="position:absolute;width:160px;height:160px;border-radius:50%;background:radial-gradient(circle,rgba(139,92,246,0.13) 0%,transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:0;filter:blur(18px)"></div>
+      <!-- Live image -->
+      <img id="camFeed" alt="Camera Feed" style="position:relative;z-index:1">
+      <!-- Placeholder -->
+      <div id="camPh" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:1">
+        <div style="width:68px;height:68px;border-radius:18px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;justify-content:center">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+          </svg>
+        </div>
+        <span style="font-size:12px;color:rgba(165,168,215,0.35);letter-spacing:0.3px">Press Start to begin</span>
+      </div>
+    </div>
+
+    <!-- Emotion card -->
+    <div class="card" style="padding:20px 22px;flex-shrink:0">
+      <div style="font-size:9px;font-weight:700;letter-spacing:2.4px;text-transform:uppercase;color:var(--t3);margin-bottom:18px">Current Emotion</div>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
+        <div style="width:58px;height:58px;border-radius:16px;background:rgba(139,92,246,0.10);border:1px solid rgba(139,92,246,0.22);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 0 22px rgba(139,92,246,0.14)">
+          <span id="emoEmoji" style="font-size:33px;line-height:1">😐</span>
+        </div>
+        <div style="min-width:0">
+          <div id="emoName" style="font-size:22px;font-weight:800;color:var(--t1);line-height:1.1">Neutral</div>
+          <div id="emoConf" style="font-size:11px;color:var(--t3);margin-top:5px">Awaiting detection…</div>
+        </div>
+      </div>
+      <div class="mood-badge" id="moodBadge" style="margin-bottom:18px">🎯&nbsp;&nbsp;Focused</div>
+      <div style="display:flex;gap:10px">
+        <button id="startBtn" onclick="startDet()"
+                style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
+                       padding:11px;border-radius:10px;font-size:13px;font-weight:700;
+                       cursor:pointer;border:none;font-family:inherit;
+                       background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;
+                       transition:all 0.18s;box-shadow:0 4px 14px rgba(22,163,74,0.30)"
+                onmouseover="this.style.filter='brightness(1.10)'"
+                onmouseout ="this.style.filter='brightness(1)'">
+          <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor"><path d="M0 0l10 6-10 6z"/></svg>
+          Start
+        </button>
+        <button id="stopBtn" onclick="stopDet()" disabled
+                style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
+                       padding:11px;border-radius:10px;font-size:13px;font-weight:700;
+                       cursor:pointer;font-family:inherit;
+                       background:rgba(239,68,68,0.10);border:1px solid rgba(239,68,68,0.28);
+                       color:#f87171;transition:all 0.18s;opacity:0.55"
+                onmouseover="if(!this.disabled){this.style.background='rgba(239,68,68,0.18)';this.style.opacity='1'}"
+                onmouseout ="if(!this.disabled){this.style.background='rgba(239,68,68,0.10)';this.style.opacity='1'}">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="2"/></svg>
+          Stop
+        </button>
+      </div>
+    </div>
+  </div><!-- /left col -->
+
+
+  <!-- ═══════════ MID COL ═══════════ -->
+  <div class="dash-mid">
+
+    <!-- Mood Distribution -->
+    <div class="card" style="padding:20px 22px;flex-shrink:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+        <span style="font-size:9px;font-weight:700;letter-spacing:2.4px;text-transform:uppercase;color:var(--t3)">Mood Distribution</span>
+        <span id="sesTimer" style="font-size:10px;color:var(--t4);font-variant-numeric:tabular-nums">—</span>
+      </div>
+
+      <!-- Session stats -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px">
+        <div class="m-tile"><div class="m-val" id="sesCount">0</div><div class="m-cap">Detections</div></div>
+        <div class="m-tile"><div class="m-val" id="sesDom" style="font-size:13px;color:var(--accent)">—</div><div class="m-cap">Dominant</div></div>
+        <div class="m-tile"><div class="m-val" id="sesConf">—</div><div class="m-cap">Avg Conf</div></div>
+      </div>
+
+      <!-- Bars -->
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+            <span style="font-size:13px;font-weight:500;color:var(--t2)">Energized</span>
+            <span id="pE" style="font-size:12px;font-weight:700;color:#f59e0b">0%</span>
+          </div>
+          <div style="height:8px;border-radius:4px;background:rgba(255,255,255,0.06);overflow:hidden">
+            <div class="bar-fill" id="bE" style="height:100%;border-radius:4px;background:linear-gradient(90deg,#f59e0b,#fbbf24)"></div>
+          </div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+            <span style="font-size:13px;font-weight:500;color:var(--t2)">Focused</span>
+            <span id="pF" style="font-size:12px;font-weight:700;color:#818cf8">0%</span>
+          </div>
+          <div style="height:8px;border-radius:4px;background:rgba(255,255,255,0.06);overflow:hidden">
+            <div class="bar-fill" id="bF" style="height:100%;border-radius:4px;background:linear-gradient(90deg,#6366f1,#818cf8)"></div>
+          </div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+            <span style="font-size:13px;font-weight:500;color:var(--t2)">Calm</span>
+            <span id="pC" style="font-size:12px;font-weight:700;color:#2dd4bf">0%</span>
+          </div>
+          <div style="height:8px;border-radius:4px;background:rgba(255,255,255,0.06);overflow:hidden">
+            <div class="bar-fill" id="bC" style="height:100%;border-radius:4px;background:linear-gradient(90deg,#0d9488,#2dd4bf)"></div>
+          </div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+            <span style="font-size:13px;font-weight:500;color:var(--t2)">Drowsy</span>
+            <span id="pD" style="font-size:12px;font-weight:700;color:#fb923c">0%</span>
+          </div>
+          <div style="height:8px;border-radius:4px;background:rgba(255,255,255,0.06);overflow:hidden">
+            <div class="bar-fill" id="bD" style="height:100%;border-radius:4px;background:linear-gradient(90deg,#ea580c,#fb923c)"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Drowsiness Monitor -->
+    <div class="card" style="padding:20px 22px;flex-shrink:0">
+      <div style="font-size:9px;font-weight:700;letter-spacing:2.4px;text-transform:uppercase;color:var(--t3);margin-bottom:16px">Drowsiness Monitor</div>
+
+      <!-- 4 metric tiles with icons -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px">
+        <!-- EAR -->
+        <div class="m-tile">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(190,192,235,0.35)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 6px">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+          <div class="m-val" id="mEar">—</div>
+          <div class="m-cap">EAR</div>
+        </div>
+        <!-- PERCLOS -->
+        <div class="m-tile">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(190,192,235,0.35)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 6px">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          <div class="m-val" id="mPer">—</div>
+          <div class="m-cap">PERCLOS</div>
+        </div>
+        <!-- YAWNS -->
+        <div class="m-tile">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(190,192,235,0.35)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 6px">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <div class="m-val" id="mYwn">—</div>
+          <div class="m-cap">Yawns</div>
+        </div>
+        <!-- BLINKS -->
+        <div class="m-tile">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(190,192,235,0.35)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 6px">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <div class="m-val" id="mBlk">—</div>
+          <div class="m-cap">Blinks/min</div>
+        </div>
+      </div>
+
+      <!-- Drowsy alert banner -->
+      <div id="drwyAlert"
+           style="display:none;background:rgba(239,68,68,0.10);border:1px solid rgba(239,68,68,0.22);border-radius:10px;padding:10px 14px;font-size:12px;color:#f87171;margin-bottom:10px">
+        😴 Drowsiness detected — switching to energizing music!
+      </div>
+
+      <!-- Status line -->
+      <div style="display:flex;align-items:center;gap:7px">
+        <div style="width:7px;height:7px;border-radius:50%;background:#22c55e;flex-shrink:0;box-shadow:0 0 6px rgba(34,197,94,0.50)"></div>
+        <div id="drwySt" style="font-size:12px;color:var(--t3)">Alert — Normal</div>
+      </div>
+    </div>
+
+    <!-- Text Emotion Analysis -->
+    <div class="card" style="padding:20px 22px;flex-shrink:0">
+      <div style="font-size:9px;font-weight:700;letter-spacing:2.4px;text-transform:uppercase;color:var(--t3);margin-bottom:16px">Text Emotion Analysis</div>
+      <textarea id="txtIn" rows="3" placeholder="Type something to detect emotion from text…"
+                class="inp" style="width:100%;resize:none;margin-bottom:14px;font-size:13px"></textarea>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span id="txtRes" style="font-size:12px;color:var(--t3)">—</span>
+        <button onclick="doTxtAnalyze()"
+                style="display:flex;align-items:center;gap:6px;padding:9px 20px;border-radius:10px;
+                       font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;
+                       background:var(--accent);color:#fff;border:none;
+                       box-shadow:0 4px 14px rgba(139,92,246,0.30);transition:all 0.18s"
+                onmouseover="this.style.filter='brightness(1.12)'"
+                onmouseout ="this.style.filter='brightness(1)'">
+          Analyze
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  </div><!-- /mid col -->
+
+
+  <!-- ═══════════ RIGHT COL ═══════════ -->
+  <div class="dash-right">
+
+    <!-- Now Playing -->
+    <div class="card" style="padding:18px 20px;flex-shrink:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <span style="font-size:9px;font-weight:700;letter-spacing:2.4px;text-transform:uppercase;color:var(--t3)">Now Playing</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2dd4bf" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+        </svg>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div id="tArt" style="width:46px;height:46px;border-radius:12px;flex-shrink:0;background:rgba(255,255,255,0.06);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:20px">🎵</div>
+        <div style="flex:1;min-width:0">
+          <div id="tName" style="font-size:13px;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Not connected</div>
+          <div id="tArtist" style="font-size:11px;color:var(--t3);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Connect Spotify to begin</div>
+        </div>
+      </div>
+      <button id="dashSpConBtn" onclick="bridge&&bridge.connect_spotify()"
+              style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;
+                     padding:11px;border-radius:10px;font-size:13px;font-weight:700;
+                     cursor:pointer;border:none;font-family:inherit;
+                     background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;
+                     transition:all 0.18s;box-shadow:0 4px 14px rgba(22,163,74,0.25)"
+              onmouseover="this.style.filter='brightness(1.10)'"
+              onmouseout ="this.style.filter='brightness(1)'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        Connect Spotify
+      </button>
+    </div>
+
+    <!-- Upcoming Events -->
+    <div class="card" style="padding:18px 20px;flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-shrink:0">
+        <span style="font-size:9px;font-weight:700;letter-spacing:2.4px;text-transform:uppercase;color:var(--t3)">Upcoming Events</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          <button onclick="navTo(2)" style="font-size:10px;color:var(--t4);background:transparent;border:none;cursor:pointer;font-family:inherit;transition:color 0.15s"
+                  onmouseover="this.style.color='var(--t2)'" onmouseout="this.style.color='var(--t4)'">View all</button>
+        </div>
+      </div>
+      <div id="calList" style="flex:1;overflow-y:auto">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px 0">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(165,168,215,0.20)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          <span style="font-size:11px;color:var(--t4);text-align:center">Connect Calendar to see events</span>
+          <button onclick="navTo(2)"
+                  style="padding:8px 22px;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer;border:none;font-family:inherit;background:var(--accent);color:#fff;transition:all 0.18s;box-shadow:0 4px 12px rgba(139,92,246,0.28)"
+                  onmouseover="this.style.filter='brightness(1.12)'" onmouseout="this.style.filter='brightness(1)'">Connect Calendar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MoodBot mini -->
+    <div class="card" style="flex:1;min-height:150px;display:flex;flex-direction:column;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid rgba(255,255,255,0.05);flex-shrink:0">
+        <div style="width:30px;height:30px;border-radius:9px;background:var(--acc-dim);border:1px solid var(--acc-bd);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 0 12px rgba(139,92,246,0.20)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+        <span style="font-size:13px;font-weight:700;flex:1;color:var(--t1)">MoodBot</span>
+        <div style="display:flex;align-items:center;gap:5px">
+          <div style="width:6px;height:6px;border-radius:50%;background:#22c55e;box-shadow:0 0 5px rgba(34,197,94,0.60)"></div>
+          <span style="font-size:9px;color:rgba(52,211,153,0.70);font-weight:600">Online</span>
+        </div>
+        <button onclick="navTo(5)"
+                style="font-size:10px;color:var(--t4);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:3px 10px;background:transparent;cursor:pointer;font-family:inherit;transition:all 0.15s;margin-left:4px"
+                onmouseover="this.style.borderColor='rgba(255,255,255,0.16)';this.style.color='var(--t2)'"
+                onmouseout ="this.style.borderColor='rgba(255,255,255,0.08)';this.style.color='var(--t4)'">Open</button>
+      </div>
+      <div id="miniMsgs" style="flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+        <div class="bubble bot">Hi! I'm MoodBot 😊</div>
+      </div>
+      <div style="display:flex;gap:8px;padding:10px 12px;border-top:1px solid rgba(255,255,255,0.05);flex-shrink:0">
+        <input id="miniInp" placeholder="Ask MoodBot…" class="inp-round"
+               style="flex:1;font-size:12px;padding:7px 14px"
+               onkeydown="if(event.key==='Enter')sendMini()">
+        <button onclick="sendMini()"
+                style="width:32px;height:32px;border-radius:9px;border:none;cursor:pointer;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 10px rgba(139,92,246,0.35)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+
+  </div><!-- /right col -->
+</div><!-- /dash-grid -->

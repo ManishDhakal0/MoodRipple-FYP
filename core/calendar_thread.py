@@ -12,7 +12,7 @@ def _get_service(provided_service=None):
     """Return a Calendar service — uses provided if available, else re-authenticates."""
     if provided_service is not None:
         return provided_service
-    from fyp_calendar import get_calendar_service
+    from services.calendar import get_calendar_service
     return get_calendar_service()
 
 

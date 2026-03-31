@@ -1,273 +1,569 @@
 # ui/pages/dashboard.py
-# Main dashboard: camera + emotion bars + Spotify player + Calendar
+# DashboardPage — glassmorphism layout.
+# Left: camera glass panel + text emotion panel.
+# Right (scrollable): emotion display + mood stats + now playing + calendar.
+# All cards are GlassCard instances (transparent with painted fill + shimmer edge).
 
 import os
-import json
-import time
-import random
-from datetime import datetime
-from pathlib import Path
 
-import numpy as np
 import cv2
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QSizePolicy, QSlider, QListWidget, QScrollArea,
-    QLineEdit, QTextEdit, QDateTimeEdit, QFormLayout, QProgressBar,
+    QTextEdit, QProgressBar,
 )
-from PyQt5.QtCore import pyqtSignal, Qt, QDateTime
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtCore    import pyqtSignal, Qt
+from PyQt5.QtGui     import QColor
 
-from core.emotion_thread import EmotionDetectionThread
-from core.spotify_thread import SpotifyMonitorThread
-from core.calendar_thread import CalendarEventsThread, CalendarCreateThread
-from core.constants import EMOTION_TO_MOOD, EMOTION_EMOJIS, MOOD_ICONS, REACTION_MAP
+from core.emotion_db        import EmotionDB
+from core.settings_manager  import SettingsManager
 
-
-def _ms_to_str(ms: int) -> str:
-    s = ms // 1000
-    return f"{s // 60}:{s % 60:02d}"
+from ui.components.glass_card        import GlassCard
+from ui.components.detection_mixin   import DetectionMixin
+from ui.components.spotify_autoplay  import SpotifyAutoplayMixin
+from ui.components.calendar_mixin    import CalendarMixin
 
 
-class DashboardPage(QWidget):
-    """
-    Main dashboard.
-    Public API:
-        set_spotify(sp, display_name, product)
-        clear_spotify()
-        set_calendar_service(service)
-        clear_calendar_service()
-    Signal:
-        status_changed(message, color_hex)
-    """
+def _set_label_color(label, color: str, size: str = "12px"):
+    css = f"color: {color}; font-size: {size};"
+    if label.styleSheet() != css:
+        label.setStyleSheet(css)
 
-    status_changed = pyqtSignal(str, str)
+
+# ── Shared style constants ─────────────────────────────────────────────────────
+_C1 = "#e8ecf0"                      # primary text
+_C2 = "rgba(232,236,240,0.48)"       # secondary text
+_C3 = "rgba(232,236,240,0.24)"       # tertiary / hint text
+_CA = "#F5C518"                       # yellow accent
+
+_BTN_PRI = """
+    QPushButton {
+        background: rgba(245,197,24,0.12);
+        color: #F5C518;
+        border: 1px solid rgba(245,197,24,0.24);
+        border-radius: 100px;
+        font-size: 12px; font-weight: 600;
+        padding: 0 18px; min-height: 32px;
+    }
+    QPushButton:hover  { background: rgba(245,197,24,0.20); border-color: rgba(245,197,24,0.40); }
+    QPushButton:disabled { color: rgba(245,197,24,0.28); background: rgba(245,197,24,0.05);
+                           border-color: rgba(245,197,24,0.10); }
+"""
+_BTN_SEC = """
+    QPushButton {
+        background: rgba(255,255,255,0.07);
+        color: rgba(232,236,240,0.55);
+        border: none;
+        border-radius: 100px;
+        font-size: 12px;
+        padding: 0 16px; min-height: 32px;
+    }
+    QPushButton:hover    { background: rgba(255,255,255,0.12); color: #e8ecf0; }
+    QPushButton:disabled { color: rgba(232,236,240,0.20); background: rgba(255,255,255,0.03); }
+    QPushButton:checked  { background: rgba(245,197,24,0.12); color: #F5C518;
+                           border: 1px solid rgba(245,197,24,0.22); }
+"""
+_BTN_ICO = """
+    QPushButton {
+        background: rgba(255,255,255,0.08);
+        color: rgba(232,236,240,0.72);
+        border: none; border-radius: 100px;
+        font-size: 14px;
+        min-width: 36px; max-width: 36px;
+        min-height: 36px; max-height: 36px;
+        padding: 0;
+    }
+    QPushButton:hover    { background: rgba(255,255,255,0.14); color: #e8ecf0; }
+    QPushButton:disabled { color: rgba(232,236,240,0.18); background: rgba(255,255,255,0.03); }
+"""
+_BTN_ICO_LG = """
+    QPushButton {
+        background: rgba(255,255,255,0.10);
+        color: rgba(232,236,240,0.80);
+        border: none; border-radius: 100px;
+        font-size: 16px;
+        min-width: 44px; max-width: 44px;
+        min-height: 44px; max-height: 44px;
+        padding: 0;
+    }
+    QPushButton:hover { background: rgba(255,255,255,0.16); color: #e8ecf0; }
+"""
+_BAR_BASE = """
+    QProgressBar {
+        background: rgba(255,255,255,0.08);
+        border: none; border-radius: 4px;
+        min-height: 7px; max-height: 7px;
+    }
+"""
+_LIST_QSS = """
+    QListWidget {
+        background: rgba(255,255,255,0.04);
+        border: none; border-radius: 12px;
+        padding: 4px; font-size: 11px;
+        color: rgba(232,236,240,0.45); outline: none;
+    }
+    QListWidget::item { padding: 6px 10px; border-radius: 7px; }
+    QListWidget::item:hover    { background: rgba(255,255,255,0.07); color: #e8ecf0; }
+    QListWidget::item:selected { background: rgba(245,197,24,0.12); color: #F5C518; }
+"""
+_TEXT_INPUT_QSS = """
+    QTextEdit {
+        background: rgba(255,255,255,0.06);
+        color: #e8ecf0; border: none;
+        border-radius: 14px; padding: 12px 16px; font-size: 13px;
+        selection-background-color: rgba(245,197,24,0.22);
+    }
+    QTextEdit:focus { background: rgba(255,255,255,0.09); }
+"""
+_SLIDER_QSS = """
+    QSlider::groove:horizontal {
+        background: rgba(255,255,255,0.10);
+        border: none; height: 4px; border-radius: 2px;
+    }
+    QSlider::handle:horizontal {
+        background: #F5C518; width: 12px; height: 12px;
+        border-radius: 6px; margin: -4px 0; border: none;
+    }
+    QSlider::sub-page:horizontal {
+        background: #F5C518; border-radius: 2px;
+    }
+"""
+
+
+def _section_label(text: str) -> QLabel:
+    lbl = QLabel(text.upper())
+    lbl.setStyleSheet(
+        "font-size: 10px; font-weight: 700; color: rgba(232,236,240,0.28);"
+        " letter-spacing: 2.5px; background: transparent;")
+    return lbl
+
+
+def _bar_row(label_text: str, accent: str):
+    """Returns (HBoxLayout, QProgressBar, pct_QLabel)."""
+    row = QHBoxLayout()
+    row.setSpacing(10)
+    lbl = QLabel(label_text)
+    lbl.setFixedWidth(70)
+    lbl.setStyleSheet(f"font-size: 11px; color: {_C2}; background: transparent;")
+    bar = QProgressBar()
+    bar.setRange(0, 100)
+    bar.setValue(0)
+    bar.setTextVisible(False)
+    bar.setStyleSheet(
+        _BAR_BASE + f"QProgressBar::chunk {{ background: {accent}; border-radius: 3px; }}")
+    pct = QLabel("0%")
+    pct.setFixedWidth(34)
+    pct.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+    pct.setStyleSheet(f"font-size: 11px; color: {_C3}; background: transparent;")
+    row.addWidget(lbl)
+    row.addWidget(bar, 1)
+    row.addWidget(pct)
+    return row, bar, pct
+
+
+def _metric_tile(label_text: str):
+    """Returns (QFrame tile, value QLabel)."""
+    tile = QFrame()
+    tile.setStyleSheet("""
+        QFrame {
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+        }
+    """)
+    tl = QVBoxLayout(tile)
+    tl.setContentsMargins(8, 8, 8, 8)
+    tl.setSpacing(3)
+    val = QLabel("—")
+    val.setAlignment(Qt.AlignCenter)
+    val.setStyleSheet(
+        f"font-size: 13px; font-weight: 700; color: {_C1}; background: transparent;")
+    lbl = QLabel(label_text)
+    lbl.setAlignment(Qt.AlignCenter)
+    lbl.setStyleSheet(
+        f"font-size: 8px; font-weight: 600; color: {_C3}; letter-spacing: 0.5px;"
+        " background: transparent;")
+    tl.addWidget(val)
+    tl.addWidget(lbl)
+    return tile, val
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+class DashboardPage(QWidget, DetectionMixin, SpotifyAutoplayMixin, CalendarMixin):
+    status_changed   = pyqtSignal(str, str)
+    emotion_detected = pyqtSignal(str, str)   # (emotion, mood) — 60s cooldown in mixin
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
         self.sp               = None
         self.spotify_product  = None
+        self.spotify_monitor  = None
         self.calendar_service = None
-
-        self.detection_thread       = None
-        self.spotify_monitor        = None
-        self.calendar_thread        = None
-        self.calendar_create_thread = None
-
+        self.calendar_thread  = None
+        self.detection_thread = None
         self.autoplay_enabled = False
         self.current_mood     = None
         self.pending_mood     = None
         self.last_playback_id = None
-        self.queued_ids       = []
-        self.queued_tracks    = []
-        self.queue_target     = 2
+        self.queued_ids:    list = []
+        self.queued_tracks: list = []
+        self.queue_target   = 2
+        self.text_detector       = None
+        self._text_thread        = None
+        self._prev_playback:dict = {}
+        self._was_drowsy         = False
+        self._music_prefs: dict  = {"source": "favourites", "language": "all"}
+        self._mood_candidate: str   = None
+        self._mood_candidate_since  = 0.0
+        self._db                 = EmotionDB()
+        self._mood_widget        = None
 
-        self.text_detector = None
         self._init_text_detector()
-
         self._build_ui()
 
-    # ══════════════════════════════════════════════════════════════
-    # UI Construction
-    # ══════════════════════════════════════════════════════════════
+    # ── Build ─────────────────────────────────────────────────────────────────
     def _build_ui(self):
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
+        self.setStyleSheet("DashboardPage { background: transparent; }")
 
-        scroll = QScrollArea()
-        scroll.setObjectName("panelScroll")
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(24, 18, 24, 18)
+        outer.setSpacing(18)
 
-        content = QWidget()
-        cl = QVBoxLayout(content)
-        cl.setContentsMargins(18, 18, 18, 18)
-        cl.setSpacing(12)
+        # ── Left column — camera + text ──────────────────────────────────────
+        left = QWidget()
+        left.setStyleSheet("background: transparent;")
+        lv = QVBoxLayout(left)
+        lv.setContentsMargins(0, 0, 0, 0)
+        lv.setSpacing(14)
+        lv.addWidget(self._build_camera_panel(), 1)
+        lv.addWidget(self._build_text_panel())
+        outer.addWidget(left, 3)
 
-        # ── Row 1: Camera (60%) | Emotion analysis (40%) ─────────
-        row1 = QHBoxLayout()
-        row1.setSpacing(12)
-        row1.addWidget(self._build_camera_card(), 6)
-        row1.addWidget(self._build_emotion_card(), 4)
-        cl.addLayout(row1)
+        # ── Right column — scrollable stacked glass cards ────────────────────
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setFrameShape(QFrame.NoFrame)
+        right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        right_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }")
+        right_scroll.viewport().setStyleSheet("background: transparent;")
 
-        # ── Row 2: Now Playing (full width) ──────────────────────
-        cl.addWidget(self._build_nowplaying_card())
+        right_content = QWidget()
+        right_content.setStyleSheet("background: transparent;")
+        rv = QVBoxLayout(right_content)
+        rv.setContentsMargins(0, 0, 4, 0)
+        rv.setSpacing(14)
+        rv.addWidget(self._build_emotion_panel())
+        rv.addWidget(self._build_moodstats_panel())
+        rv.addWidget(self._build_nowplaying_panel())
+        rv.addWidget(self._build_calendar_panel())
+        rv.addStretch()
 
-        # ── Row 3: Text emotion (40%) | Calendar (60%) ───────────
-        row3 = QHBoxLayout()
-        row3.setSpacing(12)
-        row3.addWidget(self._build_text_card(), 4)
-        row3.addWidget(self._build_calendar_card(), 6)
-        cl.addLayout(row3)
+        right_scroll.setWidget(right_content)
+        outer.addWidget(right_scroll, 2)
 
-        cl.addStretch()
-        scroll.setWidget(content)
-        root.addWidget(scroll)
+    # ══════════════════════════════════════════════════════════════════════════
+    # Camera Panel
+    # ══════════════════════════════════════════════════════════════════════════
+    def _build_camera_panel(self) -> GlassCard:
+        card = GlassCard(radius=22)
+        card.setMinimumHeight(360)
 
-    # ── Card factory helpers ──────────────────────────────────────
-    def _card(self, title: str = ""):
-        frame = QFrame()
-        frame.setObjectName("card")
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(10)
-        if title:
-            lbl = QLabel(title)
-            lbl.setObjectName("cardTitle")
-            layout.addWidget(lbl)
-        return frame, layout
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-    def _sep(self):
-        line = QFrame()
-        line.setObjectName("separator")
-        line.setFrameShape(QFrame.HLine)
-        return line
-
-    # ──────────────────────────────────────────────────────────────
-    # Camera card
-    # ──────────────────────────────────────────────────────────────
-    def _build_camera_card(self):
-        frame, layout = self._card("LIVE DETECTION")
-
-        self.camera_label = QLabel("Camera will appear here\nwhen detection starts")
+        # ── Camera feed label ─────────────────────────────────────────────────
+        self.camera_label = QLabel()
         self.camera_label.setObjectName("cameraFeed")
         self.camera_label.setAlignment(Qt.AlignCenter)
-        self.camera_label.setMinimumSize(340, 250)
+        self.camera_label.setMinimumSize(280, 200)
         self.camera_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.camera_label.setStyleSheet("""
+            QLabel#cameraFeed {
+                background: #030305;
+                border: none;
+                border-radius: 20px;
+                color: rgba(240,240,240,0.10);
+                font-size: 12px;
+            }
+        """)
+
+        # Placeholder when idle
+        ph = QVBoxLayout()
+        ph.setAlignment(Qt.AlignCenter)
+        ph.setSpacing(14)
+        cam_icon = QLabel("◉")
+        cam_icon.setAlignment(Qt.AlignCenter)
+        cam_icon.setStyleSheet(
+            "font-size: 64px; color: rgba(245,197,24,0.22); background: transparent;")
+        cam_title = QLabel("Camera Off")
+        cam_title.setAlignment(Qt.AlignCenter)
+        cam_title.setStyleSheet(
+            "font-size: 18px; font-weight: 700; color: rgba(240,240,240,0.30);"
+            " letter-spacing: -0.4px; background: transparent;")
+        cam_text = QLabel("Hit  ▶ Start  to begin detection")
+        cam_text.setAlignment(Qt.AlignCenter)
+        cam_text.setStyleSheet(
+            f"font-size: 12px; color: {_C3}; background: transparent;")
+        ph.addWidget(cam_icon)
+        ph.addWidget(cam_title)
+        ph.addWidget(cam_text)
+        self.camera_label.setLayout(ph)
+
         layout.addWidget(self.camera_label, 1)
 
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(10)
-        self.start_btn = QPushButton("▶  Start Detection")
-        self.start_btn.setObjectName("primaryButton")
-        self.start_btn.clicked.connect(self.start_detection)
+        # ── Controls row — floats at bottom of card ────────────────────────
+        ctrl = QWidget()
+        ctrl.setStyleSheet("background: transparent;")
+        cl = QHBoxLayout(ctrl)
+        cl.setContentsMargins(18, 10, 18, 14)
+        cl.setSpacing(8)
 
-        self.stop_btn = QPushButton("⏹  Stop")
-        self.stop_btn.setObjectName("secondaryButton")
+        # Spotify status pill (tiny, left side)
+        self.spotify_status_lbl = QLabel("Not connected")
+        self.spotify_status_lbl.setObjectName("spotifyStatus")
+        self.spotify_status_lbl.setStyleSheet(
+            f"font-size: 10px; color: {_C3}; background: transparent;")
+        cl.addWidget(self.spotify_status_lbl)
+        cl.addStretch()
+
+        # Live indicator
+        self._live_dot = QLabel("● Idle")
+        self._live_dot.setStyleSheet(
+            f"font-size: 10px; color: {_C3}; background: rgba(255,255,255,0.05);"
+            " border-radius: 10px; padding: 2px 10px;")
+        cl.addWidget(self._live_dot)
+        cl.addSpacing(8)
+
+        self.stop_btn = QPushButton("■  Stop")
+        self.stop_btn.setStyleSheet(_BTN_SEC)
         self.stop_btn.clicked.connect(self.stop_detection)
         self.stop_btn.setEnabled(False)
+        cl.addWidget(self.stop_btn)
 
-        btn_row.addWidget(self.start_btn)
-        btn_row.addWidget(self.stop_btn)
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
-        return frame
+        self.start_btn = QPushButton("▶  Start")
+        self.start_btn.setStyleSheet(_BTN_PRI)
+        self.start_btn.clicked.connect(self.start_detection)
+        cl.addWidget(self.start_btn)
 
-    # ──────────────────────────────────────────────────────────────
-    # Emotion analysis card
-    # ──────────────────────────────────────────────────────────────
-    def _build_emotion_card(self):
-        frame, layout = self._card("EMOTION ANALYSIS")
-        layout.setAlignment(Qt.AlignTop)
+        self.autoplay_btn = QPushButton("⚡  Auto")
+        self.autoplay_btn.setCheckable(True)
+        self.autoplay_btn.setStyleSheet(_BTN_SEC)
+        self.autoplay_btn.clicked.connect(
+            lambda checked: self._start_autoplay() if checked else self._stop_autoplay())
+        cl.addWidget(self.autoplay_btn)
 
+        # Hidden proxy buttons satisfy SpotifyAutoplayMixin's setEnabled() calls
+        self.start_autoplay_btn = QPushButton()
+        self.stop_autoplay_btn  = QPushButton()
+        self.start_autoplay_btn.hide()
+        self.stop_autoplay_btn.hide()
+
+        layout.addWidget(ctrl)
+        return card
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Text Emotion Panel
+    # ══════════════════════════════════════════════════════════════════════════
+    def _build_text_panel(self) -> GlassCard:
+        card = GlassCard(radius=20)
+        card.setFixedHeight(188)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(8)
+
+        header = QHBoxLayout()
+        lbl = QLabel("💬  Text Emotion")
+        lbl.setStyleSheet(
+            f"font-size: 13px; font-weight: 600; color: {_C1}; background: transparent;")
+        header.addWidget(lbl)
+        header.addStretch()
+        layout.addLayout(header)
+
+        self.text_status_lbl = QLabel("Type how you feel when camera is off")
+        self.text_status_lbl.setStyleSheet(f"font-size: 11px; color: {_C2}; background: transparent;")
+        self.text_status_lbl.setWordWrap(True)
+        layout.addWidget(self.text_status_lbl)
+
+        self.text_input = QTextEdit()
+        self.text_input.setPlaceholderText("How are you feeling right now?  ✍")
+        self.text_input.setFixedHeight(62)
+        self.text_input.setStyleSheet(_TEXT_INPUT_QSS)
+        layout.addWidget(self.text_input)
+
+        bottom = QHBoxLayout()
+        bottom.setSpacing(10)
+        self.text_analyze_btn = QPushButton("✦  Analyze")
+        self.text_analyze_btn.setStyleSheet(_BTN_PRI)
+        self.text_analyze_btn.clicked.connect(self.analyze_text_emotion)
+        self.text_result = QLabel("—")
+        self.text_result.setStyleSheet(f"font-size: 11px; color: {_C2}; background: transparent;")
+        self.text_result.setWordWrap(True)
+        bottom.addWidget(self.text_analyze_btn)
+        bottom.addWidget(self.text_result, 1)
+        layout.addLayout(bottom)
+
+        return card
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Emotion Display Panel
+    # ══════════════════════════════════════════════════════════════════════════
+    def _build_emotion_panel(self) -> GlassCard:
+        card = GlassCard(radius=20)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(28, 28, 28, 28)
+        layout.setSpacing(6)
+        layout.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+
+        # Section label
+        layout.addWidget(_section_label("Current State"), 0, Qt.AlignHCenter)
+        layout.addSpacing(12)
+
+        # Emoji
         self.emotion_emoji = QLabel("😐")
         self.emotion_emoji.setObjectName("emotionEmoji")
         self.emotion_emoji.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.emotion_emoji, 0, Qt.AlignHCenter)
 
+        # Emotion name
         self.emotion_name = QLabel("Neutral")
         self.emotion_name.setObjectName("emotionName")
         self.emotion_name.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.emotion_name, 0, Qt.AlignHCenter)
 
+        # Confidence
         self.emotion_conf = QLabel("Confidence: —")
         self.emotion_conf.setObjectName("emotionConf")
         self.emotion_conf.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.emotion_conf, 0, Qt.AlignHCenter)
+        layout.addSpacing(6)
 
-        self.mood_badge = QLabel("🎯  Focused")
+        # Mood badge
+        self.mood_badge = QLabel("🎯   Focused")
         self.mood_badge.setObjectName("moodBadge")
         self.mood_badge.setAlignment(Qt.AlignCenter)
-        self.mood_badge.setFixedHeight(30)
+        layout.addWidget(self.mood_badge, 0, Qt.AlignHCenter)
+        layout.addSpacing(4)
 
-        self.reaction_lbl = QLabel("Steady mood. Balanced vibe.")
+        # Reaction text
+        self.reaction_lbl = QLabel("")
         self.reaction_lbl.setObjectName("reactionText")
         self.reaction_lbl.setAlignment(Qt.AlignCenter)
         self.reaction_lbl.setWordWrap(True)
+        layout.addWidget(self.reaction_lbl, 0, Qt.AlignHCenter)
 
-        layout.addWidget(self.emotion_emoji)
-        layout.addWidget(self.emotion_name)
-        layout.addWidget(self.emotion_conf)
-        layout.addWidget(self.mood_badge)
-        layout.addWidget(self.reaction_lbl)
-        layout.addWidget(self._sep())
+        return card
 
-        # Mood distribution bars
-        dist_lbl = QLabel("MOOD DISTRIBUTION")
-        dist_lbl.setObjectName("cardTitle")
-        layout.addWidget(dist_lbl)
+    # ══════════════════════════════════════════════════════════════════════════
+    # Mood Stats + Drowsiness Panel
+    # ══════════════════════════════════════════════════════════════════════════
+    def _build_moodstats_panel(self) -> GlassCard:
+        card = GlassCard(radius=20)
 
-        self.bar_energized, self.pct_energized = self._bar_row(layout, "ENERGIZED", "barEnergized")
-        self.bar_focused,   self.pct_focused   = self._bar_row(layout, "FOCUSED",   "barFocused")
-        self.bar_calm,      self.pct_calm      = self._bar_row(layout, "CALM",      "barCalm")
-        layout.addStretch()
-        return frame
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(26, 22, 26, 22)
+        layout.setSpacing(12)
 
-    def _bar_row(self, parent_layout, label_text: str, bar_id: str):
-        row = QWidget()
-        rl = QHBoxLayout(row)
-        rl.setContentsMargins(0, 2, 0, 2)
-        rl.setSpacing(8)
+        layout.addWidget(_section_label("Mood Distribution"))
 
-        lbl = QLabel(label_text)
-        lbl.setObjectName("barLabel")
-        lbl.setFixedWidth(70)
+        # Mood bars
+        row_e, self.bar_energized, self.pct_energized = _bar_row("Energized", "#F5C518")
+        row_f, self.bar_focused,   self.pct_focused   = _bar_row("Focused",   "#60a5fa")
+        row_c, self.bar_calm,      self.pct_calm      = _bar_row("Calm",      "#34d399")
+        row_d, self.bar_drowsy,    self.pct_drowsy    = _bar_row("Drowsy",    "#fb923c")
+        for row in (row_e, row_f, row_c, row_d):
+            layout.addLayout(row)
 
-        bar = QProgressBar()
-        bar.setObjectName(bar_id)
-        bar.setRange(0, 100)
-        bar.setValue(0)
-        bar.setTextVisible(False)
+        layout.addSpacing(8)
+        layout.addWidget(_section_label("Drowsiness Metrics"))
+        layout.addSpacing(4)
 
-        pct = QLabel("0%")
-        pct.setObjectName("barPct")
-        pct.setFixedWidth(32)
-        pct.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # Metric tiles
+        metrics_row = QHBoxLayout()
+        metrics_row.setSpacing(6)
+        t_ear,    self._m_ear     = _metric_tile("EAR")
+        t_perc,   self._m_perclos = _metric_tile("PERCLOS")
+        t_yawns,  self._m_yawns   = _metric_tile("YAWNS")
+        t_head,   self._m_head    = _metric_tile("HEAD")
+        t_blinks, self._m_blinks  = _metric_tile("BLINKS")
+        for t in (t_ear, t_perc, t_yawns, t_head, t_blinks):
+            metrics_row.addWidget(t)
+        layout.addLayout(metrics_row)
 
-        rl.addWidget(lbl)
-        rl.addWidget(bar, 1)
-        rl.addWidget(pct)
-        parent_layout.addWidget(row)
-        return bar, pct
+        # Drowsy alert banner
+        self._drowsy_alert = QFrame()
+        self._drowsy_alert.setStyleSheet(
+            "QFrame { background: rgba(251,146,60,0.12); border-radius: 10px; }")
+        al = QHBoxLayout(self._drowsy_alert)
+        al.setContentsMargins(14, 10, 14, 10)
+        alert_lbl = QLabel("😴  Drowsiness Detected — Stay Alert!")
+        alert_lbl.setStyleSheet(
+            "font-size: 12px; font-weight: 700; color: #fb923c; background: transparent;")
+        al.addWidget(alert_lbl, 0, Qt.AlignCenter)
+        self._drowsy_alert.hide()
+        layout.addWidget(self._drowsy_alert)
 
-    # ──────────────────────────────────────────────────────────────
-    # Now Playing card
-    # ──────────────────────────────────────────────────────────────
-    def _build_nowplaying_card(self):
-        frame, layout = self._card("NOW PLAYING")
+        # Status / unavail labels
+        self._drowsy_status_lbl = QLabel("Start detection to monitor drowsiness")
+        self._drowsy_status_lbl.setAlignment(Qt.AlignCenter)
+        self._drowsy_status_lbl.setStyleSheet(f"font-size: 11px; color: {_C3}; background: transparent;")
+        layout.addWidget(self._drowsy_status_lbl)
 
-        main_row = QHBoxLayout()
-        main_row.setSpacing(20)
+        self._drowsy_unavail = QLabel(
+            "Install mediapipe for drowsiness detection:  pip install mediapipe")
+        self._drowsy_unavail.setStyleSheet(
+            f"font-size: 10px; color: {_C3}; background: transparent;")
+        self._drowsy_unavail.setWordWrap(True)
+        self._drowsy_unavail.hide()
+        layout.addWidget(self._drowsy_unavail)
+
+        return card
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Now Playing Panel
+    # ══════════════════════════════════════════════════════════════════════════
+    def _build_nowplaying_panel(self) -> GlassCard:
+        card = GlassCard(radius=20)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(26, 22, 26, 22)
+        layout.setSpacing(14)
+
+        layout.addWidget(_section_label("Now Playing"))
+
+        # ── Player row ───────────────────────────────────────────────────────
+        player = QHBoxLayout()
+        player.setSpacing(16)
+        player.setAlignment(Qt.AlignVCenter)
 
         # Album art
-        self.album_art = QLabel("🎵")
+        self.album_art = QLabel("♪")
         self.album_art.setObjectName("albumArt")
         self.album_art.setAlignment(Qt.AlignCenter)
-        self.album_art.setFixedSize(78, 78)
-        main_row.addWidget(self.album_art, 0, Qt.AlignTop)
+        player.addWidget(self.album_art, 0, Qt.AlignVCenter)
 
-        # Center: track info + progress + controls
-        center = QVBoxLayout()
-        center.setSpacing(6)
+        # Track info
+        track_col = QVBoxLayout()
+        track_col.setSpacing(3)
 
         self.track_name_lbl = QLabel("Nothing playing")
         self.track_name_lbl.setObjectName("trackName")
+        self.track_name_lbl.setStyleSheet(
+            f"font-size: 14px; font-weight: 700; color: {_C1}; background: transparent;")
 
-        self.track_artist_lbl = QLabel("Connect Spotify to see playback")
+        self.track_artist_lbl = QLabel("Connect Spotify")
         self.track_artist_lbl.setObjectName("trackArtist")
 
-        center.addWidget(self.track_name_lbl)
-        center.addWidget(self.track_artist_lbl)
-        center.addSpacing(2)
-
-        # Progress bar + time labels
         self.track_progress = QProgressBar()
         self.track_progress.setObjectName("trackProgress")
         self.track_progress.setRange(0, 1000)
         self.track_progress.setValue(0)
         self.track_progress.setTextVisible(False)
+        self.track_progress.setFixedHeight(3)
 
         time_row = QHBoxLayout()
         self.time_elapsed = QLabel("0:00")
@@ -278,202 +574,131 @@ class DashboardPage(QWidget):
         time_row.addStretch()
         time_row.addWidget(self.time_total)
 
-        center.addWidget(self.track_progress)
-        center.addLayout(time_row)
+        track_col.addWidget(self.track_name_lbl)
+        track_col.addWidget(self.track_artist_lbl)
+        track_col.addSpacing(4)
+        track_col.addWidget(self.track_progress)
+        track_col.addLayout(time_row)
 
-        # Controls
-        ctrl_row = QHBoxLayout()
-        ctrl_row.setSpacing(8)
-        ctrl_row.setAlignment(Qt.AlignLeft)
+        player.addLayout(track_col, 1)
+        layout.addLayout(player)
 
-        self.prev_btn = QPushButton("⏮")
-        self.prev_btn.setObjectName("controlButton")
-        self.prev_btn.clicked.connect(self._prev_track)
-        self.prev_btn.setEnabled(False)
+        # ── Player controls ──────────────────────────────────────────────────
+        ctrl = QHBoxLayout()
+        ctrl.setSpacing(8)
 
+        self.prev_btn       = QPushButton("⏮")
         self.play_pause_btn = QPushButton("▶")
-        self.play_pause_btn.setObjectName("playButton")
+        self.next_btn       = QPushButton("⏭")
+        self.prev_btn.setStyleSheet(_BTN_ICO)
+        self.play_pause_btn.setStyleSheet(_BTN_ICO_LG)
+        self.next_btn.setStyleSheet(_BTN_ICO)
+        for b in (self.prev_btn, self.play_pause_btn, self.next_btn):
+            b.setEnabled(False)
+        self.prev_btn.clicked.connect(self._prev_track)
         self.play_pause_btn.clicked.connect(self._toggle_play_pause)
-        self.play_pause_btn.setEnabled(False)
-
-        self.next_btn = QPushButton("⏭")
-        self.next_btn.setObjectName("controlButton")
         self.next_btn.clicked.connect(self._next_track)
-        self.next_btn.setEnabled(False)
 
-        ctrl_row.addWidget(self.prev_btn)
-        ctrl_row.addWidget(self.play_pause_btn)
-        ctrl_row.addWidget(self.next_btn)
-        center.addLayout(ctrl_row)
+        ctrl.addWidget(self.prev_btn)
+        ctrl.addWidget(self.play_pause_btn)
+        ctrl.addWidget(self.next_btn)
+        ctrl.addSpacing(10)
 
-        main_row.addLayout(center, 1)
-
-        # Right: volume + status + autoplay buttons
-        right_col = QVBoxLayout()
-        right_col.setSpacing(8)
-        right_col.setAlignment(Qt.AlignTop)
-
-        vol_row = QHBoxLayout()
-        vol_row.setSpacing(8)
         vol_icon = QLabel("🔊")
-        vol_icon.setStyleSheet("font-size: 12px; color: #3d4f6a;")
+        vol_icon.setStyleSheet("font-size: 12px; background: transparent;")
         self.volume_slider = QSlider(Qt.Horizontal)
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(50)
+        self.volume_slider.setStyleSheet(_SLIDER_QSS)
         self.volume_slider.setEnabled(False)
         self.volume_slider.valueChanged.connect(self._change_volume)
-        self.volume_slider.setFixedWidth(120)
-        vol_row.addWidget(vol_icon)
-        vol_row.addWidget(self.volume_slider)
-        right_col.addLayout(vol_row)
 
-        self.spotify_status_lbl = QLabel("Not connected")
-        self.spotify_status_lbl.setObjectName("spotifyStatus")
-        self.spotify_status_lbl.setWordWrap(True)
-        right_col.addWidget(self.spotify_status_lbl)
+        ctrl.addWidget(vol_icon)
+        ctrl.addWidget(self.volume_slider, 1)
+        layout.addLayout(ctrl)
 
-        right_col.addStretch()
-
-        self.start_autoplay_btn = QPushButton("▶  Auto-Play On")
-        self.start_autoplay_btn.setObjectName("greenButton")
-        self.start_autoplay_btn.clicked.connect(self._start_autoplay)
-
-        self.stop_autoplay_btn = QPushButton("⏹  Auto-Play Off")
-        self.stop_autoplay_btn.setObjectName("secondaryButton")
-        self.stop_autoplay_btn.clicked.connect(self._stop_autoplay)
-        self.stop_autoplay_btn.setEnabled(False)
-
-        right_col.addWidget(self.start_autoplay_btn)
-        right_col.addWidget(self.stop_autoplay_btn)
-
-        main_row.addLayout(right_col)
-        layout.addLayout(main_row)
-
-        # Queue
-        layout.addWidget(self._sep())
-        queue_hdr = QLabel("UP NEXT")
-        queue_hdr.setObjectName("cardTitle")
-        layout.addWidget(queue_hdr)
-
+        # ── Queue ────────────────────────────────────────────────────────────
         self.queue_list = QListWidget()
-        self.queue_list.setMaximumHeight(80)
+        self.queue_list.setMinimumHeight(80)
+        self.queue_list.setMaximumHeight(140)
+        self.queue_list.setStyleSheet(_LIST_QSS)
         self.queue_list.addItem("Queue will appear when auto-play is active")
+        self.queue_list.setToolTip("Double-click a song to skip to it immediately")
+        self.queue_list.itemDoubleClicked.connect(
+            lambda item: self._play_queued_item(self.queue_list.row(item)))
         layout.addWidget(self.queue_list)
-        return frame
 
-    # ──────────────────────────────────────────────────────────────
-    # Text emotion card
-    # ──────────────────────────────────────────────────────────────
-    def _build_text_card(self):
-        frame, layout = self._card("TEXT EMOTION")
+        return card
 
-        self.text_status_lbl = QLabel("Type below when camera detection is off")
-        self.text_status_lbl.setObjectName("subText")
-        self.text_status_lbl.setWordWrap(True)
+    # ══════════════════════════════════════════════════════════════════════════
+    # Calendar Panel
+    # ══════════════════════════════════════════════════════════════════════════
+    def _build_calendar_panel(self) -> GlassCard:
+        card = GlassCard(radius=20)
 
-        self.text_input = QTextEdit()
-        self.text_input.setPlaceholderText("How are you feeling right now?")
-        self.text_input.setFixedHeight(90)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(10)
 
-        self.text_result = QLabel("—")
-        self.text_result.setObjectName("subText")
-        self.text_result.setWordWrap(True)
+        header = QHBoxLayout()
+        title = QLabel("📅  Upcoming Events")
+        title.setStyleSheet(
+            f"font-size: 13px; font-weight: 600; color: {_C1}; background: transparent;")
+        header.addWidget(title)
+        header.addStretch()
+        self.refresh_cal_btn = QPushButton("↺  Refresh")
+        self.refresh_cal_btn.setStyleSheet(_BTN_SEC)
+        self.refresh_cal_btn.setFixedHeight(28)
+        self.refresh_cal_btn.clicked.connect(self.refresh_calendar)
+        header.addWidget(self.refresh_cal_btn)
+        layout.addLayout(header)
 
-        self.text_analyze_btn = QPushButton("Analyze Text Mood")
-        self.text_analyze_btn.setObjectName("primaryButton")
-        self.text_analyze_btn.clicked.connect(self.analyze_text_emotion)
-
-        layout.addWidget(self.text_status_lbl)
-        layout.addWidget(self.text_input)
-        layout.addWidget(self.text_result)
-        layout.addWidget(self.text_analyze_btn)
-        layout.addStretch()
-        return frame
-
-    # ──────────────────────────────────────────────────────────────
-    # Calendar card
-    # ──────────────────────────────────────────────────────────────
-    def _build_calendar_card(self):
-        frame, layout = self._card("GOOGLE CALENDAR")
-
-        self.cal_status_lbl = QLabel("Not connected — go to 📅 Calendar page")
-        self.cal_status_lbl.setObjectName("subText")
+        self.cal_status_lbl = QLabel("Not connected — go to Calendar page to connect")
+        self.cal_status_lbl.setStyleSheet(f"font-size: 11px; color: {_C2}; background: transparent;")
         self.cal_status_lbl.setWordWrap(True)
+        layout.addWidget(self.cal_status_lbl)
 
         self.cal_list = QListWidget()
-        self.cal_list.setMinimumHeight(120)
-        self.cal_list.setMaximumHeight(170)
+        self.cal_list.setMinimumHeight(100)
+        self.cal_list.setMaximumHeight(180)
+        self.cal_list.setStyleSheet(_LIST_QSS)
         self.cal_list.addItem("No events loaded")
+        layout.addWidget(self.cal_list, 1)
 
-        self.refresh_cal_btn = QPushButton("Refresh Events")
-        self.refresh_cal_btn.setObjectName("secondaryButton")
-        self.refresh_cal_btn.clicked.connect(self.refresh_calendar)
+        hint = QLabel("Manage events on the Calendar page →")
+        hint.setStyleSheet(f"font-size: 10px; color: {_C3}; background: transparent;")
+        layout.addWidget(hint)
 
-        layout.addWidget(self.cal_status_lbl)
-        layout.addWidget(self.cal_list)
-        layout.addWidget(self.refresh_cal_btn)
-        layout.addWidget(self._sep())
+        return card
 
-        add_hdr = QLabel("ADD EVENT")
-        add_hdr.setObjectName("cardTitle")
-        layout.addWidget(add_hdr)
+    # ══════════════════════════════════════════════════════════════════════════
+    # Shared helpers
+    # ══════════════════════════════════════════════════════════════════════════
+    def _refresh_queue_display(self):
+        self.queue_list.clear()
+        if not self.queued_tracks:
+            self.queue_list.addItem("Queue will appear when auto-play is active")
+            return
+        for t in self.queued_tracks:
+            self.queue_list.addItem(
+                f"{t.get('name', '?')}   ·   {t.get('artist', '?')}")
 
-        form = QFormLayout()
-        form.setContentsMargins(0, 4, 0, 0)
-        form.setSpacing(8)
-
-        self.cal_title_input = QLineEdit()
-        self.cal_title_input.setPlaceholderText("Event title")
-
-        self.cal_start_input = QDateTimeEdit(QDateTime.currentDateTime())
-        self.cal_start_input.setCalendarPopup(True)
-        self.cal_start_input.setDisplayFormat("MMM d, yyyy  HH:mm")
-
-        self.cal_end_input = QDateTimeEdit(QDateTime.currentDateTime().addSecs(3600))
-        self.cal_end_input.setCalendarPopup(True)
-        self.cal_end_input.setDisplayFormat("MMM d, yyyy  HH:mm")
-
-        self.cal_location_input = QLineEdit()
-        self.cal_location_input.setPlaceholderText("Location (optional)")
-
-        self.cal_desc_input = QTextEdit()
-        self.cal_desc_input.setPlaceholderText("Notes (optional)")
-        self.cal_desc_input.setFixedHeight(60)
-
-        for lbl_text, widget in [
-            ("Title",    self.cal_title_input),
-            ("Start",    self.cal_start_input),
-            ("End",      self.cal_end_input),
-            ("Location", self.cal_location_input),
-            ("Notes",    self.cal_desc_input),
-        ]:
-            lbl = QLabel(lbl_text)
-            lbl.setObjectName("formLabel")
-            form.addRow(lbl, widget)
-
-        layout.addLayout(form)
-
-        self.create_event_btn = QPushButton("Create Event")
-        self.create_event_btn.setObjectName("primaryButton")
-        self.create_event_btn.clicked.connect(self.create_calendar_event)
-        layout.addWidget(self.create_event_btn)
-        return frame
-
-    # ══════════════════════════════════════════════════════════════
-    # Public API
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
+    # Public API (called by MainWindow / mixins)
+    # ══════════════════════════════════════════════════════════════════════════
     def set_spotify(self, sp, display_name: str, product: str):
         self.sp              = sp
         self.spotify_product = product
-        color = "#10b981" if product.lower() == "premium" else "#f59e0b"
+        color = "#34d399" if product.lower() == "premium" else "#fbbf24"
         self.spotify_status_lbl.setText(f"● {display_name}  ({product.capitalize()})")
-        self.spotify_status_lbl.setStyleSheet(f"color: {color}; font-size: 11px;")
+        _set_label_color(self.spotify_status_lbl, color, "10px")
         self._start_spotify_monitor()
 
     def clear_spotify(self):
         self.sp = None
         self.spotify_status_lbl.setText("Not connected")
-        self.spotify_status_lbl.setStyleSheet("")
+        self.spotify_status_lbl.setStyleSheet(
+            f"font-size: 10px; color: {_C3}; background: transparent;")
         for btn in (self.play_pause_btn, self.prev_btn, self.next_btn):
             btn.setEnabled(False)
         self.volume_slider.setEnabled(False)
@@ -484,462 +709,42 @@ class DashboardPage(QWidget):
     def set_calendar_service(self, service):
         self.calendar_service = service
         self.cal_status_lbl.setText("● Google Calendar connected")
-        self.cal_status_lbl.setStyleSheet("color: #10b981; font-size: 12px;")
+        _set_label_color(self.cal_status_lbl, "#34d399")
         self.refresh_calendar()
 
     def clear_calendar_service(self):
         self.calendar_service = None
-        self.cal_status_lbl.setText("Not connected — go to 📅 Calendar page")
-        self.cal_status_lbl.setStyleSheet("")
+        self.cal_status_lbl.setText("Not connected — go to Calendar page to connect")
+        self.cal_status_lbl.setStyleSheet(f"font-size: 11px; color: {_C2}; background: transparent;")
 
-    # ══════════════════════════════════════════════════════════════
-    # Detection
-    # ══════════════════════════════════════════════════════════════
-    def start_detection(self):
-        if self.detection_thread and self.detection_thread.isRunning():
+    def set_mood_widget(self, widget):
+        self._mood_widget = widget
+
+    def emotion_db(self) -> EmotionDB:
+        return self._db
+
+    def export_session_csv(self):
+        sid = self._db.session_id
+        if not sid:
+            sessions = self._db.get_sessions(limit=1)
+            if sessions:
+                sid = sessions[0]["id"]
+        if not sid:
+            self.status_changed.emit("No session data to export.", "#fbbf24")
             return
-        self.detection_thread = EmotionDetectionThread()
-        self.detection_thread.frame_ready.connect(self._on_frame)
-        self.detection_thread.emotion_ready.connect(self._on_emotion)
-        self.detection_thread.scores_ready.connect(self._on_scores)
-        self.detection_thread.status_changed.connect(self.status_changed)
-
-        if not self.detection_thread.load_model():
-            self.status_changed.emit("❌ Model failed to load.", "#ef4444")
-            return
-
-        self.detection_thread.is_running = True
-        self.detection_thread.start()
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-        self.status_changed.emit("✅ Detection started.", "#10b981")
-
-    def stop_detection(self):
-        if self.detection_thread:
-            self.detection_thread.stop()
-            self.detection_thread = None
-        self.camera_label.clear()
-        self.camera_label.setText("Camera will appear here\nwhen detection starts")
-        self.start_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        self.status_changed.emit("⏹ Detection stopped.", "#3d4f6a")
-
-    def _on_frame(self, frame: np.ndarray):
-        h, w, ch = frame.shape
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        img = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888)
-        pix = QPixmap.fromImage(img).scaled(
-            self.camera_label.width(), self.camera_label.height(),
-            Qt.KeepAspectRatio, Qt.SmoothTransformation,
-        )
-        self.camera_label.setPixmap(pix)
-
-    def _on_emotion(self, emotion: str, confidence: float, mood: str):
-        emoji = EMOTION_EMOJIS.get(emotion, "😐")
-        icon  = MOOD_ICONS.get(mood, "🎯")
-        react = REACTION_MAP.get(emotion, "")
-        self.emotion_emoji.setText(emoji)
-        self.emotion_name.setText(emotion.capitalize())
-        self.emotion_conf.setText(f"Confidence: {confidence * 100:.1f}%")
-        self.mood_badge.setText(f"{icon}  {mood.capitalize()}")
-        self.reaction_lbl.setText(react)
-        if self.autoplay_enabled:
-            self.pending_mood = mood
-            self._refresh_queue_display()
-            if self.current_mood is None:
-                self._sync_autoplay(force_replace=False)
-
-    def _on_scores(self, scores: dict):
-        """Update 3 mood score bars with normalised values from the thread."""
-        e_val = int(scores.get("happy",   0.0) * 100)
-        f_val = int(scores.get("neutral", 0.0) * 100)
-        c_val = int(scores.get("sad",     0.0) * 100)
-        self.bar_energized.setValue(e_val)
-        self.pct_energized.setText(f"{e_val}%")
-        self.bar_focused.setValue(f_val)
-        self.pct_focused.setText(f"{f_val}%")
-        self.bar_calm.setValue(c_val)
-        self.pct_calm.setText(f"{c_val}%")
-
-    # ══════════════════════════════════════════════════════════════
-    # Text emotion
-    # ══════════════════════════════════════════════════════════════
-    def _init_text_detector(self):
+        folder = SettingsManager.get("export_folder", "")
         try:
-            from text_emotion import TextEmotionDetector
-            self.text_detector = TextEmotionDetector()
-        except Exception:
-            self.text_detector = None
+            base = self._db.export_csv(sid, folder)
+            self.status_changed.emit(f"Exported: {os.path.basename(base)}_*.csv", "#34d399")
+        except Exception as ex:
+            self.status_changed.emit(f"Export failed: {ex}", "#f87171")
 
-    def analyze_text_emotion(self):
-        if self.detection_thread and self.detection_thread.isRunning():
-            self.text_status_lbl.setText("Stop camera detection first to use text fallback.")
-            self.text_status_lbl.setStyleSheet("color: #f59e0b; font-size: 12px;")
-            return
-        if not self.text_detector:
-            self.text_status_lbl.setText("Text model unavailable — run text_emotion_train.py first.")
-            self.text_status_lbl.setStyleSheet("color: #ef4444; font-size: 12px;")
-            return
-        text = self.text_input.toPlainText().strip()
-        if not text:
-            self.text_status_lbl.setText("Enter some text first.")
-            self.text_status_lbl.setStyleSheet("color: #ef4444; font-size: 12px;")
-            return
+    def set_music_prefs(self, prefs: dict):
+        self._music_prefs = prefs
 
-        result     = self.text_detector.predict(text)
-        emotion    = result["emotion"]
-        confidence = result["confidence"]
-        mood       = EMOTION_TO_MOOD.get(emotion, "focused")
-        self.text_result.setText(f"Result: {emotion.capitalize()} ({confidence * 100:.1f}%)")
-        self.text_status_lbl.setText("Text emotion is now driving mood.")
-        self.text_status_lbl.setStyleSheet("color: #10b981; font-size: 12px;")
-
-        payload = {
-            "emotion": emotion, "confidence": float(confidence),
-            "timestamp_unix": int(time.time()), "source": "text",
-        }
-        Path("latest_emotion.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        self._on_emotion(emotion, confidence, mood)
-
-    # ══════════════════════════════════════════════════════════════
-    # Spotify
-    # ══════════════════════════════════════════════════════════════
-    def _start_spotify_monitor(self):
-        if self.sp and (not self.spotify_monitor or not self.spotify_monitor.isRunning()):
-            self.spotify_monitor = SpotifyMonitorThread(self.sp)
-            self.spotify_monitor.playback_updated.connect(self._on_playback)
-            self.spotify_monitor.is_running = True
-            self.spotify_monitor.start()
-            for btn in (self.play_pause_btn, self.prev_btn, self.next_btn):
-                btn.setEnabled(True)
-            self.volume_slider.setEnabled(True)
-
-    def _on_playback(self, info: dict):
-        prev_id    = self.last_playback_id
-        current_id = info.get("track_id")
-        self.track_name_lbl.setText(info["track"])
-        self.track_artist_lbl.setText(info["artist"])
-        self.play_pause_btn.setText("⏸" if info["is_playing"] else "▶")
-
-        progress = info.get("progress_ms", 0)
-        duration = info.get("duration_ms", 0)
-        if duration:
-            self.track_progress.setValue(int(progress / duration * 1000))
-            self.time_elapsed.setText(_ms_to_str(progress))
-            self.time_total.setText(_ms_to_str(duration))
-
-        self.volume_slider.blockSignals(True)
-        self.volume_slider.setValue(info["volume"])
-        self.volume_slider.blockSignals(False)
-
-        if current_id:
-            self.last_playback_id = current_id
-        if prev_id and current_id and current_id != prev_id:
-            self.queued_ids    = [i for i in self.queued_ids    if i != current_id]
-            self.queued_tracks = [t for t in self.queued_tracks if t.get("id") != current_id]
-            self._refresh_queue_display()
-            if self.autoplay_enabled:
-                self._sync_autoplay(force_replace=False)
-
-    def _toggle_play_pause(self):
-        if not self.sp:
-            return
-        try:
-            cur = self.sp.current_playback()
-            if cur and cur.get("is_playing"):
-                self.sp.pause_playback()
-            else:
-                dev = self._preferred_device()
-                if dev:
-                    self.sp.start_playback(device_id=dev)
-        except Exception as e:
-            self.status_changed.emit(f"Play/pause error: {e}", "#ef4444")
-
-    def _next_track(self):
-        if self.sp:
-            try:
-                self.sp.next_track()
-            except Exception as e:
-                self.status_changed.emit(f"Next track error: {e}", "#ef4444")
-
-    def _prev_track(self):
-        if self.sp:
-            try:
-                self.sp.previous_track()
-            except Exception as e:
-                self.status_changed.emit(f"Prev track error: {e}", "#ef4444")
-
-    def _change_volume(self, val):
-        if self.sp:
-            try:
-                self.sp.volume(val)
-            except Exception:
-                pass
-
-    def _preferred_device(self):
-        if not self.sp:
-            return None
-        try:
-            devices = self.sp.devices().get("devices", [])
-        except Exception as e:
-            self.status_changed.emit(f"Cannot read Spotify devices: {e}", "#ef4444")
-            return None
-        if not devices:
-            self.status_changed.emit(
-                "Open Spotify on your computer and play a song first.", "#ef4444"
-            )
-            return None
-        for matcher in (
-            lambda d: d.get("type") == "Computer" and d.get("is_active"),
-            lambda d: d.get("type") == "Computer",
-            lambda d: d.get("is_active"),
-            lambda d: True,
-        ):
-            dev = next((d for d in devices if matcher(d)), None)
-            if dev:
-                return dev.get("id")
-        return None
-
-    def _is_premium(self) -> bool:
-        return (self.spotify_product or "").lower() == "premium"
-
-    def _mood_tracks(self, mood: str, n: int = 5):
-        if not self.sp:
-            return []
-        try:
-            recent = self.sp.current_user_recently_played(limit=50)
-            tracks = [item["track"] for item in recent.get("items", [])]
-            if not tracks:
-                top = self.sp.current_user_top_tracks(limit=50, time_range="short_term")
-                tracks = top.get("items", [])
-            seen, unique = set(), []
-            for t in tracks:
-                tid = t.get("id")
-                if tid and not t.get("is_local") and tid not in seen:
-                    unique.append(t)
-                    seen.add(tid)
-            random.seed(mood)
-            random.shuffle(unique)
-            return unique[:n]
-        except Exception as e:
-            self.status_changed.emit(f"Cannot build Spotify queue: {e}", "#ef4444")
-            return []
-
-    def _start_playback(self, uris):
-        dev = self._preferred_device()
-        if not dev:
-            return False
-        try:
-            self.sp.transfer_playback(device_id=dev, force_play=False)
-            time.sleep(0.8)
-            self.sp.start_playback(device_id=dev, uris=uris)
-            return True
-        except Exception as e:
-            self.status_changed.emit(f"Spotify playback failed: {e}", "#ef4444")
-            return False
-
-    def _queue_tracks(self, mood: str, count: int = 1) -> int:
-        if not self.sp or count <= 0:
-            return 0
-        dev = self._preferred_device()
-        if not dev:
-            return 0
-        tracks = self._mood_tracks(mood, n=max(count + len(self.queued_ids), 8))
-        added = 0
-        for track in tracks:
-            uri, tid = track.get("uri"), track.get("id")
-            if not uri or not tid or tid == self.last_playback_id or tid in self.queued_ids:
-                continue
-            try:
-                self.sp.add_to_queue(uri, device_id=dev)
-            except Exception:
-                continue
-            self.queued_ids.append(tid)
-            artist = track["artists"][0]["name"] if track.get("artists") else "Unknown"
-            self.queued_tracks.append({
-                "id": tid, "name": track.get("name", "Unknown"),
-                "artist": artist, "mood": mood,
-            })
-            added += 1
-            if added >= count:
-                break
-        self._refresh_queue_display()
-        return added
-
-    def _start_autoplay(self):
-        if not self.sp:
-            self.status_changed.emit("Spotify not connected.", "#ef4444")
-            return
-        if not self._is_premium():
-            self.status_changed.emit("Spotify Premium required for playback control.", "#f59e0b")
-            return
-        if not self._preferred_device():
-            return
-        self.autoplay_enabled = True
-        self.current_mood = self.pending_mood = None
-        self.last_playback_id = None
-        self.queued_ids = self.queued_tracks = []
-        self.start_autoplay_btn.setEnabled(False)
-        self.stop_autoplay_btn.setEnabled(True)
-        self._refresh_queue_display()
-        self.status_changed.emit("Auto-play enabled.", "#10b981")
-
-    def _stop_autoplay(self):
-        self.autoplay_enabled = False
-        self.current_mood = self.pending_mood = None
-        self.last_playback_id = None
-        self.queued_ids = self.queued_tracks = []
-        self.start_autoplay_btn.setEnabled(True)
-        self.stop_autoplay_btn.setEnabled(False)
-        self._refresh_queue_display()
-        self.status_changed.emit("Auto-play disabled.", "#3d4f6a")
-
-    def _sync_autoplay(self, force_replace: bool = False):
-        if not self.autoplay_enabled or not self.sp:
-            return
-        target = self.pending_mood or self.current_mood
-        if not target:
-            return
-        try:
-            current = self.sp.current_playback()
-        except Exception as e:
-            self.status_changed.emit(f"Cannot read Spotify: {e}", "#ef4444")
-            return
-        has_track = bool(current and current.get("item") and current["item"].get("id"))
-        if not has_track or force_replace:
-            tracks = self._mood_tracks(target, n=max(self.queue_target, 3))
-            uris   = [t["uri"] for t in tracks if t.get("uri")]
-            if not uris:
-                return
-            if self._start_playback(uris[:self.queue_target]):
-                first = tracks[0]
-                self.current_mood     = target
-                self.pending_mood     = None
-                self.last_playback_id = first.get("id")
-                self.queued_ids       = [t.get("id") for t in tracks[1:self.queue_target] if t.get("id")]
-                self.queued_tracks    = []
-                for t in tracks[1:self.queue_target]:
-                    if not t.get("id"):
-                        continue
-                    artist = t["artists"][0]["name"] if t.get("artists") else "Unknown"
-                    self.queued_tracks.append({
-                        "id": t["id"], "name": t.get("name", "Unknown"),
-                        "artist": artist, "mood": target,
-                    })
-                self.track_name_lbl.setText(first["name"])
-                self.track_artist_lbl.setText(
-                    first["artists"][0]["name"] if first.get("artists") else ""
-                )
-                self._refresh_queue_display()
-                self.status_changed.emit(f"Auto-play: {target} music.", "#10b981")
-            return
-        if self.pending_mood and self.pending_mood != self.current_mood:
-            self.current_mood  = self.pending_mood
-            self.pending_mood  = None
-            self.queued_ids = self.queued_tracks = []
-            added = self._queue_tracks(self.current_mood, count=self.queue_target)
-            if added:
-                self.status_changed.emit(f"Mood changed → {self.current_mood}.", "#10b981")
-            return
-        missing = max(0, self.queue_target - len(self.queued_ids))
-        if missing:
-            self._queue_tracks(target, count=missing)
-
-    def _refresh_queue_display(self):
-        self.queue_list.clear()
-        if self.pending_mood and self.pending_mood != self.current_mood:
-            self.queue_list.addItem(f"After this song: switching to {self.pending_mood}")
-        if not self.queued_tracks:
-            self.queue_list.addItem("No upcoming tracks queued")
-            return
-        for i, t in enumerate(self.queued_tracks, 1):
-            mood_tag = f" [{t['mood']}]" if t.get("mood") else ""
-            self.queue_list.addItem(f"{i}. {t['name']} — {t['artist']}{mood_tag}")
-
-    # ══════════════════════════════════════════════════════════════
-    # Calendar
-    # ══════════════════════════════════════════════════════════════
-    def refresh_calendar(self):
-        if not self.calendar_service and not os.path.exists("token.pickle"):
-            self.cal_status_lbl.setText("Not connected — go to 📅 Calendar page to connect.")
-            return
-        self.refresh_cal_btn.setEnabled(False)
-        self.cal_status_lbl.setText("Syncing…")
-        if self.calendar_thread and self.calendar_thread.isRunning():
-            return
-        self.calendar_thread = CalendarEventsThread(service=self.calendar_service)
-        self.calendar_thread.events_ready.connect(self._on_calendar_events)
-        self.calendar_thread.status_changed.connect(self._on_cal_status)
-        self.calendar_thread.finished.connect(lambda: self.refresh_cal_btn.setEnabled(True))
-        self.calendar_thread.start()
-
-    def create_calendar_event(self):
-        title = self.cal_title_input.text().strip()
-        if not title:
-            self._on_cal_status("Event title is required.", "#ef4444")
-            return
-        start_dt = self.cal_start_input.dateTime().toPyDateTime()
-        end_dt   = self.cal_end_input.dateTime().toPyDateTime()
-        if end_dt <= start_dt:
-            self._on_cal_status("End time must be after start time.", "#ef4444")
-            return
-        payload = {
-            "summary":     title,
-            "description": self.cal_desc_input.toPlainText().strip(),
-            "start":       {"dateTime": start_dt.isoformat(), "timeZone": "Asia/Kathmandu"},
-            "end":         {"dateTime": end_dt.isoformat(),   "timeZone": "Asia/Kathmandu"},
-        }
-        loc = self.cal_location_input.text().strip()
-        if loc:
-            payload["location"] = loc
-        self.create_event_btn.setEnabled(False)
-        self._on_cal_status("Creating event…", "#3d4f6a")
-        self.calendar_create_thread = CalendarCreateThread(payload, service=self.calendar_service)
-        self.calendar_create_thread.status_changed.connect(self._on_cal_status)
-        self.calendar_create_thread.created.connect(self._on_event_created)
-        self.calendar_create_thread.finished.connect(lambda: self.create_event_btn.setEnabled(True))
-        self.calendar_create_thread.start()
-
-    def _on_event_created(self):
-        self.cal_title_input.clear()
-        self.cal_location_input.clear()
-        self.cal_desc_input.clear()
-        self.cal_start_input.setDateTime(QDateTime.currentDateTime())
-        self.cal_end_input.setDateTime(QDateTime.currentDateTime().addSecs(3600))
-        self.refresh_calendar()
-
-    def _on_cal_status(self, msg: str, color: str):
-        self.cal_status_lbl.setText(msg)
-        self.cal_status_lbl.setStyleSheet(f"color: {color}; font-size: 12px;")
-        self.status_changed.emit(msg, color)
-
-    def _on_calendar_events(self, events: list):
-        self.cal_list.clear()
-        if not events:
-            self.cal_list.addItem("No upcoming events")
-            return
-        for ev in events:
-            summary = ev.get("summary", "Untitled")
-            start   = ev.get("start", {})
-            raw     = start.get("dateTime", start.get("date", ""))
-            self.cal_list.addItem(f"{self._fmt_time(raw)}  ·  {summary}")
-
-    @staticmethod
-    def _fmt_time(raw: str) -> str:
-        if not raw:
-            return "?"
-        if "T" not in raw:
-            return raw
-        try:
-            return datetime.fromisoformat(
-                raw.replace("Z", "+00:00")
-            ).strftime("%b %d  %I:%M %p")
-        except ValueError:
-            return raw
-
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
     # Cleanup
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
     def shutdown(self):
         if self.detection_thread:
             self.detection_thread.stop()
@@ -947,6 +752,5 @@ class DashboardPage(QWidget):
             self.spotify_monitor.stop()
         if self.calendar_thread and self.calendar_thread.isRunning():
             self.calendar_thread.wait()
-        if self.calendar_create_thread and self.calendar_create_thread.isRunning():
-            self.calendar_create_thread.wait()
+        self._db.close()
         cv2.destroyAllWindows()

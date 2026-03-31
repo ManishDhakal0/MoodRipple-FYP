@@ -1,0 +1,89 @@
+<!-- Page header + range -->
+<div style="display:flex;align-items:center;gap:12px;flex-shrink:0">
+  <div style="flex:1">
+    <div style="font-size:19px;font-weight:800;color:var(--t1);letter-spacing:-0.3px">Analytics</div>
+    <div style="font-size:12px;color:var(--t3);margin-top:2px">Your emotion &amp; music insights at a glance</div>
+  </div>
+  <div style="display:flex;gap:3px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:100px;padding:3px">
+    <button class="a-range-btn active" onclick="aSetRange(1,this)">Today</button>
+    <button class="a-range-btn"        onclick="aSetRange(7,this)">7 Days</button>
+    <button class="a-range-btn"        onclick="aSetRange(30,this)">30 Days</button>
+  </div>
+  <button onclick="bridge&&bridge.request_analytics()"
+          style="padding:7px 16px;border-radius:100px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--t2);transition:all 0.18s"
+          onmouseover="this.style.background='rgba(255,255,255,0.09)'"
+          onmouseout ="this.style.background='rgba(255,255,255,0.05)'">↻ Refresh</button>
+</div>
+
+<!-- 8 KPI tiles -->
+<div class="kpi-grid">
+  <div class="kpi-tile" style="--kpi-color:#60a5fa"><div class="kpi-val" id="aKpiDet">—</div><div class="kpi-key">Detections</div></div>
+  <div class="kpi-tile" style="--kpi-color:#a78bfa"><div class="kpi-val" id="aKpiSess">—</div><div class="kpi-key">Sessions</div></div>
+  <div class="kpi-tile" style="--kpi-color:#8b5cf6"><div class="kpi-val" id="aKpiMood" style="font-size:14px">—</div><div class="kpi-key">Top Mood</div></div>
+  <div class="kpi-tile" style="--kpi-color:#f59e0b"><div class="kpi-val" id="aKpiHour">—</div><div class="kpi-key">Peak Hour</div></div>
+  <div class="kpi-tile" style="--kpi-color:#38bdf8"><div class="kpi-val" id="aKpiConf">—</div><div class="kpi-key">Avg Conf</div></div>
+  <div class="kpi-tile" style="--kpi-color:#1DB954"><div class="kpi-val" id="aKpiTrax">—</div><div class="kpi-key">Tracks</div></div>
+  <div class="kpi-tile" style="--kpi-color:#ef4444"><div class="kpi-val" id="aKpiDrwy">—</div><div class="kpi-key">Drowsy Evts</div></div>
+  <div class="kpi-tile" style="--kpi-color:#10b981"><div class="kpi-val" id="aKpiWell">—</div><div class="kpi-key">Wellbeing</div></div>
+</div>
+
+<!-- 6 Insight cards -->
+<div class="ins-grid">
+  <div class="card-sm" style="padding:12px 14px">
+    <div style="font-size:9px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--t3);margin-bottom:6px">Most Active</div>
+    <div id="insActive" style="font-size:13px;font-weight:700;color:var(--t1)">—</div>
+    <div style="font-size:10px;color:var(--t3);margin-top:2px">peak hour today</div>
+  </div>
+  <div class="card-sm" style="padding:12px 14px">
+    <div style="font-size:9px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--t3);margin-bottom:6px">Best Day</div>
+    <div id="insBestDay" style="font-size:13px;font-weight:700;color:#a78bfa">—</div>
+    <div style="font-size:10px;color:var(--t3);margin-top:2px">most positive mood</div>
+  </div>
+  <div class="card-sm" style="padding:12px 14px">
+    <div style="font-size:9px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--t3);margin-bottom:6px">Drowsy Risk</div>
+    <div id="insDrwyRisk" style="font-size:13px;font-weight:700;color:#ef4444">—</div>
+    <div style="font-size:10px;color:var(--t3);margin-top:2px">of sessions flagged</div>
+  </div>
+  <div class="card-sm" style="padding:12px 14px">
+    <div style="font-size:9px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--t3);margin-bottom:6px">Music Lift</div>
+    <div id="insMusicLift" style="font-size:13px;font-weight:700;color:#1DB954">—</div>
+    <div style="font-size:10px;color:var(--t3);margin-top:2px">mood after music</div>
+  </div>
+  <div class="card-sm" style="padding:12px 14px">
+    <div style="font-size:9px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--t3);margin-bottom:6px">Emotion Range</div>
+    <div id="insEmoRange" style="font-size:13px;font-weight:700;color:#f59e0b">—</div>
+    <div style="font-size:10px;color:var(--t3);margin-top:2px">unique emotions</div>
+  </div>
+  <div class="card-sm" style="padding:12px 14px">
+    <div style="font-size:9px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--t3);margin-bottom:6px">Focus Window</div>
+    <div id="insFocus" style="font-size:13px;font-weight:700;color:#38bdf8">—</div>
+    <div style="font-size:10px;color:var(--t3);margin-top:2px">best focus block</div>
+  </div>
+</div>
+
+<!-- Mood Journey Timeline -->
+<div class="card" style="padding:20px;flex-shrink:0">
+  <div class="card-hdr">
+    <span class="sec-lbl">● Mood Journey Over Time</span>
+    <span id="aTimelineSub" style="font-size:11px;color:var(--t3)"></span>
+  </div>
+  <div style="position:relative;height:160px"><canvas id="cTimeline"></canvas></div>
+</div>
+
+<!-- Row: Hourly + Mood donut -->
+<div style="display:grid;grid-template-columns:3fr 2fr;gap:14px;flex-shrink:0">
+  <div class="card" style="padding:20px">
+    <div class="card-hdr"><span class="sec-lbl">🕐 When Am I Most Active?</span></div>
+    <div style="position:relative;height:180px"><canvas id="cHourly"></canvas></div>
+  </div>
+  <div class="card" style="padding:20px">
+    <div class="card-hdr"><span class="sec-lbl">◉ Mood Split</span></div>
+    <div style="position:relative;height:180px"><canvas id="cDonut"></canvas></div>
+  </div>
+</div>
+
+<!-- Top Tracks -->
+<div class="card" style="padding:20px;flex-shrink:0;margin-bottom:8px">
+  <div class="card-hdr"><span class="sec-lbl">🎧 Top Tracks Played</span></div>
+  <div id="aTopTracks"><div class="chart-empty">No track data yet</div></div>
+</div>

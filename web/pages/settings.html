@@ -1,0 +1,125 @@
+<div style="width:100%;max-width:min(660px,100%)">
+
+  <!-- Page header -->
+  <div style="margin-bottom:32px">
+    <div class="page-title">Settings</div>
+    <div class="page-sub">Configure detection, display, and API preferences</div>
+  </div>
+
+  <!-- Detection -->
+  <div style="margin-bottom:24px">
+    <div style="font-size:11px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--t3);margin-bottom:12px;padding-left:2px">Detection</div>
+    <div class="card" style="overflow:hidden">
+      <div class="set-row">
+        <div style="flex:1">
+          <div class="set-lbl-main">Auto-start detection</div>
+          <div class="set-lbl-sub">Automatically start camera when the app launches</div>
+        </div>
+        <button class="toggle" id="tog_auto_start_detection" onclick="togSet('auto_start_detection')"></button>
+      </div>
+      <div class="set-row">
+        <div style="flex:1">
+          <div class="set-lbl-main">Auto-export session CSV</div>
+          <div class="set-lbl-sub">Save emotion data as CSV when detection stops</div>
+        </div>
+        <button class="toggle" id="tog_auto_export_session" onclick="togSet('auto_export_session')"></button>
+      </div>
+      <div class="set-row">
+        <div style="flex:1">
+          <div class="set-lbl-main">Mood cooldown</div>
+          <div class="set-lbl-sub">Minimum seconds between automatic music switches</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input id="set_mood_cooldown" type="number" min="5" max="300" class="inp-sm" style="width:80px;text-align:center">
+          <span style="font-size:11px;color:var(--t3)">sec</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Display -->
+  <div style="margin-bottom:24px">
+    <div style="font-size:11px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--t3);margin-bottom:12px;padding-left:2px">Display</div>
+    <div class="card" style="overflow:hidden">
+      <div class="set-row">
+        <div style="flex:1">
+          <div class="set-lbl-main">Floating mood widget</div>
+          <div class="set-lbl-sub">Show a small always-on-top mood indicator on your desktop</div>
+        </div>
+        <button class="toggle" id="tog_show_mood_widget" onclick="togSet('show_mood_widget')"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Keys -->
+  <div style="margin-bottom:32px">
+    <div style="font-size:11px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--t3);margin-bottom:12px;padding-left:2px">API Keys</div>
+    <div class="card" style="overflow:hidden">
+      <div class="set-row">
+        <div style="flex:1">
+          <div class="set-lbl-main">OpenAI API Key</div>
+          <div class="set-lbl-sub">Required for Whisper voice input in MoodBot</div>
+        </div>
+        <input id="set_openai_key" type="password" placeholder="sk-…" class="inp-sm" style="width:210px">
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--t4);margin-top:8px;padding-left:4px">
+      🔒 Your key is stored locally and only sent to OpenAI for transcription.
+    </div>
+  </div>
+
+  <!-- Smart Drowsy Response -->
+  <div style="margin-bottom:24px">
+    <div style="font-size:11px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--t3);margin-bottom:12px;padding-left:2px">Smart Drowsy Response</div>
+    <div class="card" style="overflow:hidden">
+      <div class="set-row">
+        <div style="flex:1">
+          <div class="set-lbl-main">Time-aware drowsy music switching</div>
+          <div class="set-lbl-sub">Before your night hour → energetic; after → chill / wind-down music</div>
+        </div>
+        <button class="toggle" id="tog_smart_drowsy_response" onclick="togSet('smart_drowsy_response')"></button>
+      </div>
+      <div class="set-row">
+        <div style="flex:1">
+          <div class="set-lbl-main">Night hour threshold</div>
+          <div class="set-lbl-sub">Drowsy detections after this hour trigger the night-time music instead</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input id="set_drowsy_night_hour" type="number" min="18" max="24" class="inp-sm" style="width:60px;text-align:center" value="22">
+          <span style="font-size:11px;color:var(--t3)">:00</span>
+        </div>
+      </div>
+      <div class="set-row">
+        <div style="flex:1">
+          <div class="set-lbl-main">Before night hour → play</div>
+          <div class="set-lbl-sub">Music mood when drowsy is detected during the day</div>
+        </div>
+        <select id="set_drowsy_day_music" class="inp-sm" style="width:140px;cursor:pointer">
+          <option value="drowsy">⚡ Energized (wake up)</option>
+          <option value="focused">🎯 Focused</option>
+        </select>
+      </div>
+      <div class="set-row">
+        <div style="flex:1">
+          <div class="set-lbl-main">After night hour → play</div>
+          <div class="set-lbl-sub">Music mood when drowsy is detected at night — wind down</div>
+        </div>
+        <select id="set_drowsy_night_music" class="inp-sm" style="width:140px;cursor:pointer">
+          <option value="calm">🌊 Calm (sleep)</option>
+          <option value="focused">🎯 Focused</option>
+          <option value="drowsy">⚡ Energized</option>
+        </select>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--t4);margin-top:8px;padding-left:4px">
+      🌙 Example: detected drowsy at 11 pm → plays calm music instead of waking you up
+    </div>
+  </div>
+
+  <!-- Save button -->
+  <div style="display:flex;justify-content:flex-end;gap:12px;border-top:1px solid rgba(255,255,255,0.05);padding-top:24px">
+    <button onclick="doSave()" class="pill-btn accent" style="padding:12px 32px;font-size:14px;box-shadow:0 4px 16px rgba(139,92,246,0.38)">
+      Save Settings
+    </button>
+  </div>
+</div>

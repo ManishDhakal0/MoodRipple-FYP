@@ -1,0 +1,63 @@
+# Claude Code
+.claude/
+
+# Environment variables
+.env
+.env.*
+
+# Auth / session data
+*.db
+*.sqlite3
+session.json
+
+# Runtime / user data
+moodripple_settings.json
+music_prefs.json
+latest_emotion.json
+
+# Large model assets
+face_landmarker.task
+
+# Spotify / Google auth cache
+spotify_mood.cache
+token.pickle
+credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# ML models
+*.h5
+*.h5.index
+*.h5.data-*
+*.pkl
+*.joblib
+*.pt
+*.onnx
+
+# Dataset
+fyp dataset/
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.cache

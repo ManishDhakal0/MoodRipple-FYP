@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MoodRipple</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: { extend: {
+    fontFamily: { sans: ['Segoe UI','system-ui','-apple-system','sans-serif'] }
+  }}
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="css/base.css">
+</head>
+
+<body>
+<!-- Background arcs + glow -->
+<div class="arc arc-tl"></div>
+<div class="arc arc-br"></div>
+<div class="arc arc-tr"></div>
+<div style="position:fixed;inset:0;pointer-events:none;z-index:0;background:
+  radial-gradient(ellipse 55% 45% at 90% 3%, rgba(139,92,246,0.07) 0%,transparent 60%),
+  radial-gradient(ellipse 42% 38% at 5% 95%, rgba(139,92,246,0.05) 0%,transparent 55%),
+  radial-gradient(ellipse 35% 30% at 50% 50%, rgba(124,58,237,0.025) 0%,transparent 70%)"></div>
+
+<!-- ══════════════════════════ APP CONTAINER ══════════════════════════════ -->
+<div id="appContainer" class="app-container" style="position:relative;z-index:10;display:flex;flex-direction:column;
+            margin:8px;flex:1;height:calc(100vh - 16px);
+            background:var(--shell);border-radius:22px;
+            border:1px solid rgba(139,92,246,0.10);overflow:hidden;
+            box-shadow:0 8px 60px rgba(0,0,0,0.75),0 2px 8px rgba(0,0,0,0.55),0 0 0 1px rgba(139,92,246,0.06),0 0 80px rgba(139,92,246,0.04)">
+
+  <!-- ── HEADER ──────────────────────────────────────────────────────────── -->
+  <div class="header" style="display:flex;align-items:center;gap:12px;
+              padding:8px 18px;flex-shrink:0;
+              background:rgba(12,12,18,0.60);
+              border-bottom:1px solid rgba(255,255,255,0.055);
+              backdrop-filter:blur(20px)">
+
+    <!-- Brand -->
+    <div style="-webkit-app-region:no-drag;display:flex;align-items:center;
+                gap:8px;margin-right:6px;flex-shrink:0">
+      <div style="width:26px;height:26px;border-radius:7px;
+                  background:rgba(139,92,246,0.18);border:1px solid rgba(139,92,246,0.32);
+                  display:flex;align-items:center;justify-content:center;
+                  font-size:12px;color:var(--accent);
+                  box-shadow:0 0 12px rgba(139,92,246,0.25)">◆</div>
+      <span style="font-size:14px;font-weight:800;color:var(--t1);letter-spacing:-0.4px">MoodRipple</span>
+    </div>
+
+    <!-- Nav -->
+    <nav id="mainNav" style="display:flex;align-items:center;gap:2px;
+                             background:rgba(255,255,255,0.03);
+                             border:1px solid rgba(255,255,255,0.055);
+                             border-radius:100px;padding:4px;flex-shrink:0;
+                             overflow:hidden;max-width:calc(100vw - 400px)">
+      <button class="nav-btn active" data-pg="0" onclick="navTo(0)"><span style="font-size:11px">⬡</span>Dashboard</button>
+      <button class="nav-btn"        data-pg="1" onclick="navTo(1)"><span style="font-size:11px">◎</span>Spotify</button>
+      <button class="nav-btn"        data-pg="2" onclick="navTo(2)"><span style="font-size:11px">▦</span>Calendar</button>
+      <button class="nav-btn"        data-pg="3" onclick="navTo(3)"><span style="font-size:11px">⬙</span>Analytics</button>
+      <button class="nav-btn"        data-pg="4" onclick="navTo(4)"><span style="font-size:11px">◈</span>Settings</button>
+      <button class="nav-btn"        data-pg="5" onclick="navTo(5)"><span style="font-size:11px">◇</span>MoodBot</button>
+    </nav>
+
+    <!-- Right -->
+    <div class="hdr-right" style="margin-left:auto;display:flex;align-items:center;gap:10px">
+      <!-- Connection dots -->
+      <div style="display:flex;align-items:center;gap:8px;padding:0 4px">
+        <div style="display:flex;align-items:center;gap:4px">
+          <div class="conn-dot" id="dotSp" title="Spotify"></div>
+          <span style="font-size:10px;color:var(--t4)">Spotify</span>
+        </div>
+        <div style="width:1px;height:12px;background:rgba(255,255,255,0.07)"></div>
+        <div style="display:flex;align-items:center;gap:4px">
+          <div class="conn-dot" id="dotCal" title="Calendar"></div>
+          <span style="font-size:10px;color:var(--t4)">Calendar</span>
+        </div>
+      </div>
+
+      <!-- User pill -->
+      <div style="display:flex;align-items:center;gap:8px;
+                  background:rgba(255,255,255,0.045);border:1px solid var(--border);
+                  border-radius:100px;padding:4px 14px 4px 5px">
+        <div id="uAvatar"
+             style="width:24px;height:24px;border-radius:50%;
+                    background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:#fff;
+                    font-size:10px;font-weight:800;
+                    display:flex;align-items:center;justify-content:center;
+                    box-shadow:0 0 8px rgba(139,92,246,0.35)">?</div>
+        <span id="uName" style="font-size:12px;color:var(--t3)">Guest</span>
+      </div>
+
+      <!-- Sign out -->
+      <button onclick="bridge&&bridge.logout()"
+              style="font-size:12px;padding:0 14px;height:30px;border-radius:100px;
+                     background:transparent;border:1px solid var(--border);
+                     color:var(--t3);cursor:pointer;font-family:inherit;
+                     transition:all 0.18s"
+              onmouseover="this.style.background='rgba(239,68,68,0.10)';this.style.borderColor='rgba(239,68,68,0.28)';this.style.color='#fca5a5'"
+              onmouseout ="this.style.background='transparent';this.style.borderColor='var(--border)';this.style.color='var(--t3)'">
+        Sign out
+      </button>
+
+      <!-- Window controls -->
+      <div style="display:flex;gap:4px;margin-left:2px">
+        <button class="win-btn"       onclick="bridge&&bridge.minimize_win()">—</button>
+        <button class="win-btn" id="maxBtn" onclick="bridge&&bridge.maximize_win()">⬜</button>
+        <button class="win-btn close" onclick="bridge&&bridge.close_win()">✕</button>
+      </div>
+    </div>
+  </div><!-- /header -->
+
+  <!-- Events banner -->
+  <div id="eventsBanner"
+       style="align-items:center;height:36px;padding:0 20px;flex-shrink:0;cursor:pointer;
+              border-bottom:1px solid rgba(255,255,255,0.04);
+              background:rgba(139,92,246,0.06)"
+       onclick="navTo(2)">
+    <span style="font-size:13px;margin-right:10px">📅</span>
+    <span id="bannerText" style="flex:1;font-size:12px;color:var(--t2)"></span>
+    <button onclick="event.stopPropagation();document.getElementById('eventsBanner').classList.remove('visible')"
+            style="background:transparent;border:none;color:var(--t3);font-size:18px;
+                   cursor:pointer;padding:0 4px;line-height:1">×</button>
+  </div>
+
+  <!-- ── CONTENT ─────────────────────────────────────────────────────────── -->
+  <div style="display:flex;flex:1;overflow:hidden;min-height:0">
+
+    <!-- Dashboard page — content injected by pages/dashboard.js -->
+    <div class="page active" id="dashPage" style="flex:1;overflow:hidden;min-height:0"></div>
+
+    <!-- Spotify page — content injected by pages/spotify.js -->
+    <div class="page" id="spotifyPage"
+         style="flex:1;flex-direction:column;overflow-y:auto;
+                align-items:center;padding:24px 20px"></div>
+
+    <!-- Calendar page — content injected by pages/calendar.js -->
+    <div class="page" id="calendarPage"
+         style="flex:1;flex-direction:column;overflow-y:auto;
+                align-items:center;padding:24px 20px"></div>
+
+    <!-- Analytics page — content injected by pages/analytics.js -->
+    <div class="page" id="analyticsPage"
+         style="flex:1;flex-direction:column;overflow-y:auto;padding:16px 20px;gap:16px"></div>
+
+    <!-- Settings page — content injected by pages/settings.js -->
+    <div class="page" id="settingsPage"
+         style="flex:1;flex-direction:column;overflow-y:auto;
+                align-items:center;padding:24px 20px"></div>
+
+    <!-- MoodBot page — content injected by pages/chat.js -->
+    <div class="page" id="chatPage" style="flex:1;flex-direction:column;overflow:hidden"></div>
+
+  </div><!-- /content -->
+
+  <!-- ── STATUS BAR ───────────────────────────────────────────────────────── -->
+  <div style="display:flex;align-items:center;height:26px;padding:0 18px;gap:10px;flex-shrink:0;
+              border-top:1px solid rgba(255,255,255,0.04);
+              background:rgba(6,6,11,0.55)">
+    <span style="font-size:6px;color:rgba(139,92,246,0.50)">●</span>
+    <span id="stTxt" style="font-size:11px;flex:1;color:var(--t3);transition:color 0.4s">Ready</span>
+    <span style="font-size:10px;color:rgba(232,236,244,0.07)">MoodRipple · FYP 2025</span>
+  </div>
+
+</div><!-- /app container -->
+
+<!-- ── Load each page's HTML design from its own file ───────────────────── -->
+<script>
+(function () {
+  var pages = [
+    ['dashPage',      'pages/dashboard.html'],
+    ['spotifyPage',   'pages/spotify.html'],
+    ['calendarPage',  'pages/calendar.html'],
+    ['analyticsPage', 'pages/analytics.html'],
+    ['settingsPage',  'pages/settings.html'],
+    ['chatPage',      'pages/chat.html']
+  ];
+  pages.forEach(function (pair) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', pair[1], false);   /* synchronous — local file, always instant */
+    xhr.send(null);
+    document.getElementById(pair[0]).innerHTML = xhr.responseText;
+  });
+})();
+</script>
+
+<!-- ── Bridge + app logic ───────────────────────────────────────────────── -->
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script src="js/main.js"></script>
+
+</body>
+</html>

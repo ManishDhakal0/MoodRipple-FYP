@@ -32,6 +32,7 @@ EMOTION_TO_MOOD = {
     "fear":    "calm",
     "disgust": "calm",
     "angry":   "calm",
+    "drowsy":  "energized",  # upbeat music to wake you up
 }
 
 EMOTION_EMOJIS = {
@@ -48,6 +49,7 @@ MOOD_ICONS = {
     "energized": "⚡",
     "focused":   "🎯",
     "calm":      "🌊",
+    "drowsy":    "😴",
 }
 
 REACTION_MAP = {
